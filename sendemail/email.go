@@ -6,7 +6,7 @@ import (
 )
 
 func SendEmail(emailRecipient string) {
-    sg := sendgrid.NewSendGridClient("kernkw", "password")
+    sg := sendgrid.NewSendGridClient("kernkw", "password") // update to username we want to send ot emails from
     message := sendgrid.NewMail()
     message.AddTo(emailRecipient)
     message.SetSubject("SendGrid Testing")

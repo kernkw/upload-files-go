@@ -30,7 +30,7 @@ func ApiGet(eventName, username, password string) map[string]string {
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	
 	robots, _ := ioutil.ReadAll(resp.Body)
 
 	var unsubscribes []Unsubscribe
@@ -45,7 +45,6 @@ func ApiGet(eventName, username, password string) map[string]string {
 	for i := 0; i < len(unsubscribes); i++ {
 		returnedMap[unsubscribes[i].Email] = ""
 	}
-
 	return returnedMap
 }
 
@@ -60,15 +59,9 @@ func mapMerge(setArray []map[string]string) map[string]string {
 	return mergedList
 }
 
-func CsvToMap(file string) map[string]string {
+func CsvToMap(file *os.File) map[string]string {
 
-	wl, err := os.Open(file)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer wl.Close()
-
-	reader := csv.NewReader(wl)
+	reader := csv.NewReader(file)
 
 	reader.Comma = ';'
 	reader.LazyQuotes = true
@@ -107,16 +100,16 @@ func compareLists(wholeList, unsubscribeList map[string]string) map[string]strin
 	return wholeList
 }
 
-func main() {
-	username := "YOURUSERNAMEHERE"
-	password := "YOURPASSWORDHERE"
+func Consuela(file *os.File, username, password string) {
 
 	// fmt.Println("https://api.sendgrid.com/api/unsubscribes.get.json?api_user=" + username + "&api_key=" + password)
 
 	fmt.Println("Opening your giant list")
-	wholeList := CsvToMap(uploadedFile)
+
+	wholeList := CsvToMap(file)
 	fmt.Println("Gathering your Unsubscribes, Bounces, Invalids, Blocks, and Spam Reports")
 	unsubscribeAPIRespBody := ApiGet("unsubscribes", username, password)
+	fmt.Println(unsubscribeAPIRespBody)
 	bounceAPIRespBody := ApiGet("bounces", username, password)
 	invalidemailsAPIRespBody := ApiGet("invalidemails", username, password)
 	blocksAPIRespBody := ApiGet("blocks", username, password)

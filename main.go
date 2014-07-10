@@ -7,6 +7,7 @@ import (
 	"os"
 	"./sendemail"
 	"./consuela"
+	"fmt"
 )
  
 //Compile templates on start
@@ -27,7 +28,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	//POST takes the uploaded file(s) and saves it to disk.
 	case "POST":
 		//parse the multipart form in the request
-		err := r.ParseMultipartForm(100000)
+		err := r.ParseMultipartForm(100000) //Parse using 10MB memory chunks
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -47,23 +48,37 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			//create destination file making sure the path is writeable.
-			dst, err := os.Create("/Users/sendgrid1/test-upload-go/" + files[i].Filename)
+			dst, err := os.Create("/Users/sendgrid1/upload-files-go/" + files[i].Filename)
 
 			defer dst.Close()
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			uploadedFile := update.Consuela(file)
+			
 			//copy the uploaded file to the destination file
 			if _, err := io.Copy(dst, file); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			// pass list to consuela to remove bad addresses
+			username := r.FormValue("username")
+			password := r.FormValue("password")
+		  update.Consuela(dst, username, password)
+
+		  //send output link in email using SendGrid
+			emailRecipient := r.FormValue("email")
+			fmt.Println(emailRecipient)
+			email.SendEmail(emailRecipient)
  
 		}
 		//display success message.
 		display(w, "upload", "Upload successful.")
+
+		// upload list to database and create a customer link
+
+		
+
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -78,8 +93,7 @@ func main() {
 	//Listen on port 8080
 	http.ListenAndServe(":8080", nil)
 
-
-	emailRecipient := string("kyle.w.kern@gmail.com")
-	email.SendEmail(emailRecipient)
+	//update.Consuela(dst)
+	
 
 }
