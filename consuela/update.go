@@ -1,7 +1,9 @@
 package update
 
 import (
+	"archive/zip"
 	"bufio"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -15,36 +17,24 @@ type Unsubscribe struct {
 	Email string `json:"email"`
 }
 
-// func ApiCall(eventName, call, username, password string) []Unsubscribe {
-// 	uri := "https://api.sendgrid.com/api/" + eventName + "." + call + ".json?api_user=" + username + "&api_key=" + password
-// 	resp, err := http.Get(uri)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	return resp
-// }
-
 func ApiGet(eventName, username, password string) map[string]string {
 	uri := "https://api.sendgrid.com/api/" + eventName + ".get.json?api_user=" + username + "&api_key=" + password
 	resp, err := http.Get(uri)
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	robots, _ := ioutil.ReadAll(resp.Body)
 
 	var unsubscribes []Unsubscribe
 	json.Unmarshal(robots, &unsubscribes)
 
-	// fmt.Println(unmarsh)
-
 	returnedMap := make(map[string]string)
-
-	// fmt.Println(len(unsubscribes))
 
 	for i := 0; i < len(unsubscribes); i++ {
 		returnedMap[unsubscribes[i].Email] = ""
 	}
+
 	return returnedMap
 }
 
@@ -100,28 +90,12 @@ func compareLists(wholeList, unsubscribeList map[string]string) map[string]strin
 	return wholeList
 }
 
-func Consuela(file *os.File, username, password string) {
-
-	// fmt.Println("https://api.sendgrid.com/api/unsubscribes.get.json?api_user=" + username + "&api_key=" + password)
-
-	fmt.Println("Opening your giant list")
-
-	wholeList := CsvToMap(file)
-	fmt.Println("Gathering your Unsubscribes, Bounces, Invalids, Blocks, and Spam Reports")
-	unsubscribeAPIRespBody := ApiGet("unsubscribes", username, password)
-	fmt.Println(unsubscribeAPIRespBody)
-	bounceAPIRespBody := ApiGet("bounces", username, password)
-	invalidemailsAPIRespBody := ApiGet("invalidemails", username, password)
-	blocksAPIRespBody := ApiGet("blocks", username, password)
-	spamreportsAPIRespBody := ApiGet("spamreports", username, password)
-
-	undesireables := []map[string]string{unsubscribeAPIRespBody, bounceAPIRespBody, invalidemailsAPIRespBody, blocksAPIRespBody, spamreportsAPIRespBody}
+func zipOutput1(username string, wholeList, responce map[string]string, undesireables []map[string]string) {
 	undesireableNames := []string{"Unsubscribes", "Bounce", "Invalids", "Blocks", "Spam Reports"}
+	wholelistname := username + "DONOTSEND.csv"
+	donotsendname := username + "newlist.csv"
 
-	responce := mapMerge(undesireables)
-
-	fmt.Println("Outputing undesireables to 'DONOTSEND.csv'")
-	outputFile, _ := os.Create("DONOTSEND.csv")
+	outputFile, _ := os.Create(wholelistname)
 	defer outputFile.Close()
 	csvOutput := csv.NewWriter(outputFile)
 
@@ -134,20 +108,117 @@ func Consuela(file *os.File, username, password string) {
 		csvOutput.Write([]string{})
 	}
 
-	// fmt.Println(responce)
+	newlistOutputFile, _ := os.Create(donotsendname)
+	defer newlistOutputFile.Close()
+
+	newlistCsvOutput := csv.NewWriter(newlistOutputFile)
+	for k, _ := range wholeList {
+		newlistCsvOutput.Write([]string{k})
+		newlistCsvOutput.Flush()
+	}
+
+	// Create a buffer to write our archive to.
+	buf := new(bytes.Buffer)
+
+	// Create a new zip archive.
+	w := zip.NewWriter(buf)
+
+	// Add some files to the archive.
+	var files = []struct {
+		Name, Body string
+	}{
+		{wholelistname, "This archive contains your new list."},
+		{donotsendname, "This archive contains the emails that should not be sent to again."},
+	}
+	for _, file := range files {
+		f, err := w.Create(file.Name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = f.Write([]byte(file.Body))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	// Make sure to check the error on Close.
+	err := w.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	//write the zipped file to the disk
+	ioutil.WriteFile(username+"_.zip", buf.Bytes(), 0777)
+}
+
+func zipOutput(username string, wholeList, responce map[string]string) {
+	wholelistname := username + "_newlist.csv"
+	donotsendname := username + "_DONOTSEND.csv"
+
+	// Create a buffer to write our archive to.
+	buf := new(bytes.Buffer)
+
+	// Create a new zip archive.
+	w := zip.NewWriter(buf)
+
+	// Add some files to the archive.
+	var files = []struct {
+		Name string
+		Body map[string]string
+	}{
+		{wholelistname, wholeList},
+		{donotsendname, responce},
+	}
+
+	for _, file := range files {
+		f, err := w.Create(file.Name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for k, _ := range file.Body {
+			_, err = f.Write([]byte(k + "\n"))
+			// f.Write([]byte("\n"))
+			if err != nil {
+				log.Fatal(err)
+			}
+			// newlistCsvOutput.Write([]string{k})
+		}
+	}
+
+	// Make sure to check the error on Close.
+	err := w.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	//write the zipped file to the disk
+	ioutil.WriteFile("/Users/sendgrid1/upload-files-go/customerfiles/"+ username+".zip", buf.Bytes(), 0777)
+}
+
+// Pulls all of the user's data from the webAPI
+//   If you intend to use this with another list of unwanted emails
+//   you would run the CsvToMap fucntion with your wanted email list
+//   and run a compareLists on the two maps.
+func Consuela(file *os.File, username, password string)  {
+
+	fmt.Println("Opening your giant list")
+	wholeList := CsvToMap(file)
+	fmt.Println(wholeList)
+	fmt.Println(len(wholeList))
+	fmt.Println("Gathering your Unsubscribes, Bounces, Invalids, Blocks, and Spam Reports")
+	unsubscribeAPIRespBody := ApiGet("unsubscribes", username, password)
+	bounceAPIRespBody := ApiGet("bounces", username, password)
+	invalidemailsAPIRespBody := ApiGet("invalidemails", username, password)
+	blocksAPIRespBody := ApiGet("blocks", username, password)
+	spamreportsAPIRespBody := ApiGet("spamreports", username, password)
+
+	undesireables := []map[string]string{unsubscribeAPIRespBody, bounceAPIRespBody, invalidemailsAPIRespBody, blocksAPIRespBody, spamreportsAPIRespBody}
+
+	responce := mapMerge(undesireables)
 
 	fmt.Println("Removing undesireables from the lists")
 	outputtedList := compareLists(wholeList, responce)
 
 	fmt.Println("Building your list")
-	newlistOutputFile, _ := os.Create("newlist.csv")
-	defer newlistOutputFile.Close()
+	zipOutput(username, outputtedList, responce)
 
-	newlistCsvOutput := csv.NewWriter(newlistOutputFile)
-	for k, _ := range outputtedList {
-		newlistCsvOutput.Write([]string{k})
-		newlistCsvOutput.Flush()
-	}
-	
 	fmt.Println("Done :)")
 }
